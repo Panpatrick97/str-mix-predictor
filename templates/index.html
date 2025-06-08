@@ -1,0 +1,122 @@
+<body>
+    <h2>依次输入 allele / size / height（每行 3 个）：</h2>
+
+    <!-- 数据输入表 -->
+    <table id="entriesTable" border="1" cellpadding="4" style="border-collapse: collapse;">
+        <thead>
+            <tr><th>#</th><th>Allele</th><th>Size</th><th>Height</th></tr>
+        </thead>
+        <tbody>
+            <!-- 初始 5 行 -->
+            <script>
+                for (let i = 1; i <= 5; i++) {
+                    document.write(`<tr>
+                        <td>${i}</td>
+                        <td><input type="text" class="allele" placeholder="如 12 / OL / X"></td>
+                        <td><input type="text" class="size"   placeholder="104.5"></td>
+                        <td><input type="text" class="height" placeholder="1320"></td>
+                    </tr>`);
+                }
+            </script>
+        </tbody>
+    </table>
+    <button onclick="addRow()">➕ 添加一行</button>
+    <br><br>
+
+    <!-- 可选 Marker -->
+    <label>Marker（可选）：
+        <input type="text" id="marker" placeholder="如 D8S1179">
+    </label><br><br>
+
+    <!-- 功能按钮 -->
+    <button onclick="predict('num')">预测人数</button>
+    <button onclick="predict('ratio')">预测比例</button>
+    <button onclick="predict('both')">人数+比例</button>
+
+    <!-- 结果展示 -->
+    <div id="result"></div>
+
+<script>
+function addRow() {
+    const tbody = document.getElementById("entriesTable").querySelector("tbody");
+    const idx   = tbody.rows.length + 1;
+    const row   = tbody.insertRow();
+    row.innerHTML =
+        `<td>${idx}</td>
+         <td><input type="text" class="allele" placeholder="如 12 / OL / X"></td>
+         <td><input type="text" class="size"   placeholder="104.5"></td>
+         <td><input type="text" class="height" placeholder="1320"></td>`;
+}
+
+function collectData() {
+    const alleles = [];
+    const rows = document.getElementById("entriesTable").querySelectorAll("tbody tr");
+    rows.forEach(row => {
+        const allele = row.querySelector(".allele").value.trim();
+        const size   = row.querySelector(".size").value.trim();
+        const height = row.querySelector(".height").value.trim();
+        // 允许 allele 为数字或 'OL'/'X'/'Y'； size/height 允许空跳过
+        if (allele || size || height) {
+            alleles.push(allele);
+            alleles.push(size);
+            alleles.push(height);
+        }
+    });
+    return alleles;
+}
+
+/**
+ * 调后端接口：
+ *   type = 'num'   -> /predict_num
+ *   type = 'ratio' -> /predict_ratio
+ *   type = 'both'  -> /predict
+ */
+function predict(type) {
+    const alleles = collectData();
+    if (alleles.length === 0) { alert("请至少输入一行数据！"); return; }
+
+    const marker  = document.getElementById("marker").value.trim() || "UNKNOWN";
+    const url     = type === 'num'
+        ? '/predict_num'
+        : (type === 'ratio' ? '/predict_ratio' : '/predict');
+
+    const payload = (type === 'ratio' || type === 'both')
+        ? { alleles, marker }
+        : { alleles };
+
+    fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(r => r.json())
+    .then(data => {
+        const resDiv = document.getElementById('result');
+
+        // 若没有 status 字段或 status !== 'success'，直接显示完整返回体调试
+        if (!data.status || data.status !== 'success') {
+            resDiv.textContent = "错误: " + JSON.stringify(data);
+            return;
+        }
+
+        // 对 /predict_num 与 /predict_ratio 的嵌套形式解包
+        const result = data.prediction ? data.prediction : data;
+
+        const parts = [];
+        if (result.num !== undefined) {
+            parts.push(`预测人数：${result.num}人`);
+        }
+        if (Array.isArray(result.ratio) && result.ratio.length) {
+            parts.push(`预测比例：${result.ratio.join(':')}`);
+        } else if (Array.isArray(result.ratio_norm) && result.ratio_norm.length) {
+            parts.push(`预测比例：${result.ratio_norm.join(':')}`);
+        }
+
+        resDiv.textContent = parts.length ? parts.join('，') : "返回数据无法解析：" + JSON.stringify(data);
+    })
+    .catch(err => {
+        document.getElementById('result').textContent = "请求失败: " + err;
+    });
+}
+</script>
+</body>
